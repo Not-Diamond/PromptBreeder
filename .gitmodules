@@ -1,0 +1,3 @@
+[submodule "notdiamond-server"]
+	path = notdiamond-server
+	url = git@github.com:Not-Diamond/notdiamond-server.git
