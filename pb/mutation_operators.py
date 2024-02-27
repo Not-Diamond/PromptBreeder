@@ -1,7 +1,10 @@
+import os
 import re
+import json
 import random
 from rich import print
 from typing import List
+from pathlib import Path
 
 # from sentence_transformers import SentenceTransformer, util
 
@@ -16,7 +19,9 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-gsm8k_examples = gsm.read_jsonl('pb/data/gsm.jsonl')
+EVALUATION_DATA_DIR = os.getenv("EVALUATION_DATA_DIR")
+
+# gsm8k_examples = gsm.read_jsonl('pb/data/gsm.jsonl')
 
 # need below for estimation_distribution_mutation, not currently using.
 # model = SentenceTransformer('multi-qa-distilbert-cos-v1')
@@ -33,7 +38,7 @@ def zero_order_prompt_gen(unit: EvolutionUnit, problem_description: str, model: 
     result = model.generate(problem_description + " An ordered list of 100 hints: ")
     # search for the pattern "anything after 1. and before 2."
     pattern = r"1\.(.*?)2\."
-    match = re.search(pattern, result[0].text, re.DOTALL)
+    match = re.search(pattern, result, re.DOTALL)
     if match: 
         # return the first match
         unit.P = match.group(1).strip()
@@ -104,7 +109,7 @@ def first_order_hypermutation(unit: EvolutionUnit, model: ModelWrapper, **kwargs
 
 
 # Lamarckian Mutation
-def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, **kwargs) -> EvolutionUnit:
+def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, target_model: str, dataset_name: str, **kwargs) -> EvolutionUnit:
     """ A 'lamarckian' mutation operator similar to instruction induction in APE.
 
     As far as I can understand, give it both the Q and A from the gsm8k dataset, 
@@ -115,9 +120,24 @@ def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, **kwargs) 
     Returns: 
         EvolutionUnit: the evolution unit to replace the loser unit.
     """
-    RANDOM_WORKING_OUT = random.sample(gsm8k_examples, 1)[0]
+    dataset_path = Path(EVALUATION_DATA_DIR) / target_model / f"{dataset_name}.json"
+    with open(dataset_path, "r") as fp:
+        dataset = json.load(fp)
+
+    correct_samples = []
+    for _, sample in dataset.items():
+        if sample["sample_details"]["source"] in ("humaneval", "mbpp"):
+            if sample["result"]["score"] == 1.:
+                correct_samples.append((sample["eval_details"]["prompt"], sample["eval_details"]["origin_prediction"]))
+        else:
+            correct_samples.append((sample["eval_details"]["prompt"], sample["eval_details"]["references"]))
+
+    random_sample = random.sample(correct_samples, 1)[0]
+    prompt, answer = random_sample
   
-    unit.P = model.generate("I gave a friend an instruction and some advice. Here are the correct examples of his workings out " + RANDOM_WORKING_OUT['question'] +" " +  RANDOM_WORKING_OUT['answer'] + " The instruction was: ")
+    message = f"I gave a friend an instruction and some advice. Here are the correct examples of his workings out\n\n{prompt}\nAnswer: {answer}.\n\nThe instruction was:"
+
+    unit.P = model.generate(message)
     return unit 
 
 # Prompt crossover and context shuffling. These happen AFTER mutation operators. 
@@ -137,13 +157,13 @@ def context_shuffling(**kwargs):
 
 # omitting the estimation_distribution_mutation
 MUTATORS = [
-    zero_order_prompt_gen,
-    first_order_prompt_gen,
+    # zero_order_prompt_gen,
+    # first_order_prompt_gen,
     #estimation_distribution_mutation,
-    lineage_based_mutation,
-    zero_order_hypermutation,
-    first_order_hypermutation,
-    working_out_task_prompt
+    # lineage_based_mutation,
+    # zero_order_hypermutation,
+    # first_order_hypermutation,
+    working_out_task_prompt,
 ]
 
 POST_MUTATORS = [
@@ -151,7 +171,7 @@ POST_MUTATORS = [
     context_shuffling
 ]
 
-def mutate(population: Population, model: ModelWrapper) -> Population:
+def mutate(population: Population, model: ModelWrapper, target_model: str, dataset_name: str) -> Population:
     """Select and apply a random mutator"""
     # steps
     # 1. parse through the population, grouping each evo unit by 2
@@ -190,6 +210,8 @@ def mutate(population: Population, model: ModelWrapper) -> Population:
             'model' : model,
             'elites' : population.elites,
             'problem_description': population.problem_description,
+            'dataset_name': dataset_name,
+            'target_model': target_model
         }
 
         # uniformly pick and call a random mutation operator on the losing unit

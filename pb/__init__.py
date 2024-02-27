@@ -99,7 +99,7 @@ def run_for_n(n: int, population: Population, writer_model: ModelWrapper, target
     """     
     for i in range(n):
         print(f"================== Population {i} ================== ")
-        mutate(population, writer_model)
+        mutate(population, writer_model, target_model, dataset_name)
         print("done mutation")
         _evaluate_fitness(population, loaded_cfg, eval_args, target_model, dataset_name, wandb_run)
         print("done evaluation")
