@@ -133,7 +133,6 @@ def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, target_mod
         else:
             correct_samples.append((sample["eval_details"]["prompt"], sample["eval_details"]["references"]))
 
-    ipdb.set_trace()
     random_sample = random.sample(correct_samples, 1)[0]
     prompt, answer = random_sample
   
