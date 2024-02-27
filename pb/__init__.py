@@ -215,7 +215,6 @@ def _evaluate_fitness(population: Population, loaded_cfg, eval_args, target_mode
     start_time = time.time()
 
     elite_fitness = -1
-    results = []
     for unit in population.units:
         new_prompt = unit.P
         result = dataset_prompt_obj(new_prompt, target_model, dataset_name, loaded_cfg, eval_args, wandb_run)
@@ -229,14 +228,6 @@ def _evaluate_fitness(population: Population, loaded_cfg, eval_args, target_mode
             wandb_run.summary["best_score"] = elite_fitness
             wandb_run.summary["best_experiment_dir"] = str(result['results_path'])
             wandb_run.summary["best_prompt"] = new_prompt
-
-    # https://arxiv.org/pdf/2309.16797.pdf#page=5, P is a task-prompt to condition 
-    # the LLM before further input Q.
-    for unit_index, score in enumerate(results):
-        population.units[unit_index].fitness = score
-        if score > elite_fitness:
-            current_elite = population.units[unit_index].model_copy()
-            elite_fitness = score
 
     # append best unit of generation to the elites list.
     population.elites.append(current_elite)

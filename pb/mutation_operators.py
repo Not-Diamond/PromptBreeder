@@ -15,6 +15,7 @@ from pb.thinking_styles import thinking_styles
 
 from . import ModelWrapper
 
+import ipdb
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -132,10 +133,11 @@ def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, target_mod
         else:
             correct_samples.append((sample["eval_details"]["prompt"], sample["eval_details"]["references"]))
 
+    ipdb.set_trace()
     random_sample = random.sample(correct_samples, 1)[0]
     prompt, answer = random_sample
   
-    message = f"I gave a friend an instruction and some advice. Here are the correct examples of his workings out\n\n{prompt}\nAnswer: {answer}.\n\nThe instruction was:"
+    message = f"I gave a friend an instruction and some advice. Here are the correct examples of his workings out\n\n{prompt}\n{answer}.\n\nThe instruction was:"
 
     unit.P = model.generate(message)
     return unit 
@@ -157,12 +159,12 @@ def context_shuffling(**kwargs):
 
 # omitting the estimation_distribution_mutation
 MUTATORS = [
-    # zero_order_prompt_gen,
-    # first_order_prompt_gen,
+    zero_order_prompt_gen,
+    first_order_prompt_gen,
     #estimation_distribution_mutation,
-    # lineage_based_mutation,
-    # zero_order_hypermutation,
-    # first_order_hypermutation,
+    lineage_based_mutation,
+    zero_order_hypermutation,
+    first_order_hypermutation,
     working_out_task_prompt,
 ]
 
