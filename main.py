@@ -96,7 +96,7 @@ def dataset_loop(writer_model: ModelWrapper, target_model: str, study_configs: d
             wandb_run.summary["best_experiment_dir"] = ""
             wandb_run.log({f"{result['metric']}": result["score"]})
             
-            population = create_population(tp_set=m_prompts, mutator_set=t_styles, problem_description=problem_desc)
+            population = create_population(tp_set=t_styles, mutator_set=m_prompts, problem_description=problem_desc)
 
             logger.info(f'Generating the initial prompts...')
             init_run(population, writer_model, target_model, dataset_name, dataset_cfg, eval_args, wandb_run)

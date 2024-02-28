@@ -28,11 +28,20 @@ gsm8k_examples = gsm.read_jsonl('pb/data/gsm.jsonl')
 
 
 class ModelWrapper:
-    def __init__(self, model, model_name):
+    def __init__(self, model, model_name, retries=10):
         self.model = model
         self.model_name = model_name
+        self.retries = retries
 
     def generate(self, message: str):
+        for _ in range(self.retries):
+            try:
+                return self._generate(message)
+            except Exception as e:
+                pass
+        raise e
+
+    def _generate(self, message: str):
         match self.model_name:
             case "gemini-pro":
                 return self.model.generate_content(message).text
@@ -78,7 +87,7 @@ def init_run(population: Population, writer_model: ModelWrapper, target_model: s
 
     results = []
     for unit in population.units:
-        template= f"{unit.T} {unit.M} INSTRUCTION: {population.problem_description} INSTRUCTION MUTANT:"
+        template= f"{unit.M} {unit.T} INSTRUCTION: {population.problem_description} INSTRUCTION MUTANT:"
         response = writer_model.generate(template)
         results.append(response)
 
@@ -232,7 +241,7 @@ def _evaluate_fitness(population: Population, loaded_cfg, eval_args, target_mode
             wandb_run.summary["best_prompt"] = new_prompt
 
     # append best unit of generation to the elites list.
-    population.elites.append(current_elite)
+    population.elites.append((elite_fitness, current_elite))
 
     end_time = time.time()
     logger.info(f"Done fitness evaluation. {end_time - start_time}s")

@@ -1,5 +1,5 @@
 import pydantic
-from typing import List
+from typing import List, Tuple
 
 class EvolutionUnit(pydantic.BaseModel):
     """ A individual unit of the overall population.
@@ -34,5 +34,5 @@ class Population(pydantic.BaseModel):
     size: int
     age: int
     problem_description: str
-    elites: List[EvolutionUnit]
+    elites: List[Tuple[float, EvolutionUnit]]
     units: List[EvolutionUnit]

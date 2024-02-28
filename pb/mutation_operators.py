@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import copy
 import random
 from rich import print
 from typing import List
@@ -48,13 +49,14 @@ def zero_order_prompt_gen(unit: EvolutionUnit, problem_description: str, model: 
     
     return unit 
 
-def first_order_prompt_gen(unit: EvolutionUnit, model: ModelWrapper, **kwargs) -> EvolutionUnit:
+def first_order_prompt_gen(unit: EvolutionUnit, problem_description: str, model: ModelWrapper, **kwargs) -> EvolutionUnit:
     """Concatenate the mutation prompt M to the parent task-prompt P and pass it to the LLM to produce P'
     
     Returns: 
         EvolutionUnit: the evolution unit to replace the loser unit.
     """
     unit.P = model.generate(unit.M + " " + unit.P)
+    # unit.P = model.generate(unit.M + " " + problem_description)
     return unit
     
 # Estimation of Distribution Mutation - there is a variation of this called EDA rank
@@ -71,6 +73,18 @@ def estimation_distribution_mutation(unit: EvolutionUnit, population_units: List
         EvolutionUnit: the evolution unit to replace the loser unit.
     """
     pass
+
+def eda_rank_based_mutation(unit: EvolutionUnit, sorted_elites: List[EvolutionUnit], model: ModelWrapper, **kwargs) -> EvolutionUnit:
+    """Using the stored history of best units, provide the LLM this list in chronological order to produce a novel prompt as continuation.
+    
+    Returns: 
+        EvolutionUnit: the evolution unit to replace the loser unit.
+    """
+    HEADING = f"INSTRUCTION: {unit.M}\n A List of Responses in descending order of score. ({len(sorted_elites)+1}) is the best response. It resembles ({len(sorted_elites)}) more than it does (1)."
+    ITEMS = "\n".join(["({}) {}".format(i+1, x.P) for i, x in enumerate(sorted_elites)])
+    unit.P = model.generate(HEADING + ITEMS)
+    return unit
+
 def lineage_based_mutation(unit: EvolutionUnit, elites: List[EvolutionUnit], model: ModelWrapper, **kwargs) -> EvolutionUnit:
     """Using the stored history of best units, provide the LLM this list in chronological order to produce a novel prompt as continuation.
     
@@ -81,7 +95,6 @@ def lineage_based_mutation(unit: EvolutionUnit, elites: List[EvolutionUnit], mod
     # made a choice not to format it with newlines, could change later.
     ITEMS = "\n".join(["{}. {}".format(i+1, x.P) for i, x in enumerate(elites)])
     unit.P = model.generate(HEADING + ITEMS)
-    
     return unit
 
 # Hypermutation
@@ -93,6 +106,7 @@ def zero_order_hypermutation(unit: EvolutionUnit, problem_description: str, mode
     """
     RANDOM_THINKING_STYLE = random.sample(thinking_styles, 1)[0]
     unit.M = model.generate(problem_description + " " + RANDOM_THINKING_STYLE)
+    unit.P = model.generate(unit.M + " " + unit.P)
     return unit
 
 def first_order_hypermutation(unit: EvolutionUnit, model: ModelWrapper, **kwargs) -> EvolutionUnit:
@@ -103,11 +117,10 @@ def first_order_hypermutation(unit: EvolutionUnit, model: ModelWrapper, **kwargs
     Returns: 
         EvolutionUnit: the evolution unit to replace the loser unit.
     """
-    HYPER_MUTATION_PROMPT="Please summarize and improve the following instruction: "
+    HYPER_MUTATION_PROMPT = "Please summarize and improve the following instruction: "
     unit.M = model.generate(HYPER_MUTATION_PROMPT + unit.M)
     unit.P = model.generate(unit.M + " " + unit.P)
     return unit 
-
 
 # Lamarckian Mutation
 def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, target_model: str, dataset_name: str, **kwargs) -> EvolutionUnit:
@@ -127,28 +140,36 @@ def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, target_mod
 
     correct_samples = []
     for _, sample in dataset.items():
-        if sample["sample_details"]["source"] in ("humaneval", "mbpp"):
+        if sample["sample_details"]["source"] not in ("xsum",):
             if sample["result"]["score"] == 1.:
                 correct_samples.append((sample["eval_details"]["prompt"], sample["eval_details"]["origin_prediction"]))
         else:
             correct_samples.append((sample["eval_details"]["prompt"], sample["eval_details"]["references"]))
 
-    random_sample = random.sample(correct_samples, 1)[0]
+    random_sample = random.sample(correct_samples, 2)
     prompt, answer = random_sample
-  
-    message = f"I gave a friend an instruction and some advice. Here are the correct examples of his workings out\n\n{prompt}\n{answer}.\n\nThe instruction was:"
 
-    unit.P = model.generate(message)
+    HEADING = f"I gave a friend an instruction and some advice. Here are the correct examples of his workings out\n\n"
+    ENDING = "The instruction was: "
+    examples = ""
+    for sample in correct_samples:
+        prompt, answer = sample
+        examples += f"{prompt}\n{answer}.\n\n"
+
+    unit.P = model.generate(HEADING + examples + ENDING)
     return unit 
 
 # Prompt crossover and context shuffling. These happen AFTER mutation operators. 
-def prompt_crossover(**kwargs):
+def prompt_crossover(unit: EvolutionUnit, crossover_unit: EvolutionUnit, **kwargs):
     """
     After a mutation operator is applied, 
 
     Returns: 
         EvolutionUnit: the evolution unit to replace the loser unit.
     """
+    if random.randint(1, 10) == 1:
+        unit.P = copy.deepcopy(crossover_unit.P)
+
 def context_shuffling(**kwargs):
     """
     
@@ -160,6 +181,7 @@ def context_shuffling(**kwargs):
 MUTATORS = [
     zero_order_prompt_gen,
     first_order_prompt_gen,
+    eda_rank_based_mutation,
     #estimation_distribution_mutation,
     lineage_based_mutation,
     zero_order_hypermutation,
@@ -169,7 +191,7 @@ MUTATORS = [
 
 POST_MUTATORS = [
     prompt_crossover,
-    context_shuffling
+    # context_shuffling
 ]
 
 def mutate(population: Population, model: ModelWrapper, target_model: str, dataset_name: str) -> Population:
@@ -206,9 +228,13 @@ def mutate(population: Population, model: ModelWrapper, target_model: str, datas
         else:
             mutation_input = first_unit
 
-        data = {
+        sorted_elites = sorted(population.elites, key=lambda x: x[0])
+        sorted_elite_units = [e[1] for e in sorted_elites]
+
+        mutation_data = {
             'unit' : mutation_input,
             'model' : model,
+            'sorted_elites': sorted_elite_units,
             'elites' : population.elites,
             'problem_description': population.problem_description,
             'dataset_name': dataset_name,
@@ -218,7 +244,18 @@ def mutate(population: Population, model: ModelWrapper, target_model: str, datas
         # uniformly pick and call a random mutation operator on the losing unit
         random_mutator = random.sample(MUTATORS, 1)[0]
         print(f"MUTATING: {mutation_input} with {random_mutator.__name__}")
+        random_mutator(**mutation_data)
 
-        random_mutator(**data)
+        crossover_weights = [unit.fitness for unit in population.units]
+        crossover_unit = random.choices(population.units, weights=crossover_weights, k=1)[0]
+
+        post_mutation_data = {
+            'unit' : mutation_input,
+            'crossover_unit' : crossover_unit,
+        }
+
+        random_post_mutator = random.sample(POST_MUTATORS, 1)[0]
+        print(f"CROSS MUTATING: {mutation_input} with {random_post_mutator.__name__}")
+        random_post_mutator(**post_mutation_data)
 
     return population

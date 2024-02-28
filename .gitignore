@@ -3,3 +3,7 @@ venv
 __pycache__
 test.py
 test_random.py
+/evaluations/
+/datasets/
+/icl_inference_output/
+/wandb/
