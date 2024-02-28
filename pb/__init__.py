@@ -4,7 +4,7 @@ import copy
 import time
 import logging
 from rich import print
-from typing import List
+from typing import List, Union
 from pathlib import Path
 
 from mmengine.config import Config
@@ -115,7 +115,7 @@ def modify_prompt_template(cfg: Config, new_template: str):
         cfg["datasets"][0]["infer_cfg"]["ice_template"]["template"]["round"][0]["prompt"] = new_template
     return cfg
 
-def dataset_prompt_obj(new_prompt: str, model: str, dataset_name: str, loaded_cfg: Config, eval_cfg: EvaluationConfig, wandb_run):
+def dataset_prompt_obj(new_prompt: Union[str, None], model: str, dataset_name: str, loaded_cfg: Config, eval_cfg: EvaluationConfig, wandb_run):
     dataset_path = Path(EVALUATION_DATA_DIR) / "processed" / model / f"{dataset_name}.json"
     tmp_root = Path(EVALUATION_DATA_DIR) / "tmp" / model
     with open(dataset_path, "r") as fp:
@@ -127,8 +127,12 @@ def dataset_prompt_obj(new_prompt: str, model: str, dataset_name: str, loaded_cf
     prompt = sample["components"]["prompt"]["prompt"]
     if prompt_added:
         original_prompt = ""
+        if new_prompt is None:
+            new_prompt = ""
     else:
         original_prompt = copy.deepcopy(prompt)
+        if new_prompt is None:
+            new_prompt = prompt
 
     if prompt_added:
         prompt_template = sample["prompt_template"]["template"]
@@ -189,8 +193,6 @@ def dataset_prompt_obj(new_prompt: str, model: str, dataset_name: str, loaded_cf
 
     with open(reward_model_path, "w") as fp:
         json.dump(reward_model_data, fp)
-
-    # wandb_run.log({f"{metric}": avg_score})
 
     prompt_table_root = Path(EVALUATION_WORK_DIR) / "prompt_table"
     prompt_table_path = prompt_table_root / f"prompt_table_{wandb_run.config['exec_datetime_str']}.json"

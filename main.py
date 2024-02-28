@@ -1,4 +1,5 @@
 import os
+import copy
 import wandb
 import logging
 import argparse
@@ -14,10 +15,11 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 from utils import bcolors
 
-from pb import create_population, init_run, run_for_n, ModelWrapper
+from pb import create_population, init_run, run_for_n, ModelWrapper, dataset_prompt_obj
 from pb.mutation_prompts import mutation_prompts
 from pb.thinking_styles import thinking_styles
 from pb.run_opencompass import EvaluationConfig
+from pb.problem_descriptions import WITH_SUBSETS, problem_descriptions
 
 import ipdb
 
@@ -73,22 +75,34 @@ def dataset_loop(writer_model: ModelWrapper, target_model: str, study_configs: d
         print(f"{bcolors.OKGREEN}Optimizing {dataset.abbr} on {model_name} ({i+1}/{len(loaded_cfg.datasets)}){bcolors.ENDC}")
         dataset_name = dataset.abbr
 
+        if any([sub in dataset_name for sub in WITH_SUBSETS]):
+            superset_name = dataset_name.split(".")[0]
+            problem_desc = problem_descriptions[superset_name]
+        else:
+            problem_desc = problem_descriptions[dataset_name]
+
+        m_prompts = mutation_prompts[:study_configs["mut_prompts"]]
+        t_styles = thinking_styles[:study_configs["think_sty"]]
+
+        dataset_cfg = copy.deepcopy(loaded_cfg)
+        dataset_cfg.datasets = [dataset, ]
+
         with wandb.init(project="PromptBreeder", name=f"({study_configs['exec_datetime_str']}) {dataset_name}", job_type="train", config=study_configs) as wandb_run:
             logger.info(f'Creating the population...')
             _ = wandb_run.use_artifact("LLM Eval/training-dataset:v2")
-            wandb_run.summary["best_score"] = -1.
-            wandb_run.summary["best_experiment_dir"] = ""
-            wandb_run.summary["prompt_table"] = []
 
-            m_prompts = mutation_prompts[:study_configs["mut_prompts"]]
-            t_styles = thinking_styles[:study_configs["think_sty"]]
-            population = create_population(tp_set=m_prompts, mutator_set=t_styles, problem_description="Answer the following question")
+            result = dataset_prompt_obj(None, target_model, dataset_name, dataset_cfg, eval_args, wandb_run)
+            wandb_run.summary["best_score"] = result["score"]
+            wandb_run.summary["best_experiment_dir"] = ""
+            wandb_run.log({f"{result['metric']}": result["score"]})
+            
+            population = create_population(tp_set=m_prompts, mutator_set=t_styles, problem_description=problem_desc)
 
             logger.info(f'Generating the initial prompts...')
-            init_run(population, writer_model, target_model, dataset_name, loaded_cfg, eval_args, wandb_run)
+            init_run(population, writer_model, target_model, dataset_name, dataset_cfg, eval_args, wandb_run)
 
             logger.info(f'Starting the genetic algorithm...')
-            run_for_n(study_configs["epochs"], population, writer_model, target_model, dataset_name, loaded_cfg, eval_args, wandb_run)
+            run_for_n(study_configs["epochs"], population, writer_model, target_model, dataset_name, dataset_cfg, eval_args, wandb_run)
 
 def get_params():
     shell_parse = argparse.ArgumentParser()
