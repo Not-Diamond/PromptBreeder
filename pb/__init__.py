@@ -38,13 +38,17 @@ class ModelWrapper:
             try:
                 return self._generate(message)
             except Exception as e:
-                pass
-        raise e
+                error_message = e
+        raise RuntimeError(str(error_message))
 
     def _generate(self, message: str):
         match self.model_name:
             case "gemini-pro":
                 return self.model.generate_content(message).text
+            case "gpt-3.5-turbo":
+                response = self.model.chat.completions.create(model=self.model_name, 
+                                                              messages=[{"role": "user", "content": message},])
+                return response.choices[0].message.content
             case _:
                 raise NotImplementedError(f"{self.model_name} not implemented yet.")
 
@@ -93,7 +97,7 @@ def init_run(population: Population, writer_model: ModelWrapper, target_model: s
 
     end_time = time.time()
 
-    logger.info(f"Prompt initialization done. {end_time - start_time}s")
+    print(f"Prompt initialization done. {end_time - start_time}s")
     assert len(results) == population.size, "size of google response to population is mismatched"
 
     for i, item in enumerate(results):
@@ -219,10 +223,10 @@ def dataset_prompt_obj(new_prompt: Union[str, None], model: str, dataset_name: s
     with open(prompt_table_path, "w") as fp:
         json.dump(prompt_table, fp)
 
-    return {"score": avg_score, "metric": metric, "results_path": results_path}
+    return {"score": avg_score, "metric": metric, "results_path": results_path, "original_prompt": original_prompt}
 
 def _evaluate_fitness(population: Population, loaded_cfg, eval_args, target_model, dataset_name, wandb_run) -> Population:
-    logger.info(f"Starting fitness evaluation...")
+    print(f"Starting fitness evaluation...")
     start_time = time.time()
 
     elite_fitness = -1
@@ -244,6 +248,6 @@ def _evaluate_fitness(population: Population, loaded_cfg, eval_args, target_mode
     population.elites.append((elite_fitness, current_elite))
 
     end_time = time.time()
-    logger.info(f"Done fitness evaluation. {end_time - start_time}s")
+    print(f"Done fitness evaluation. {end_time - start_time}s")
     wandb_run.log({f"{result['metric']}": elite_fitness})
     return population

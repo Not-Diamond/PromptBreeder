@@ -13,12 +13,15 @@ from rich import print
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
+from openai import OpenAI
+
 from utils import bcolors
 
 from pb import create_population, init_run, run_for_n, ModelWrapper, dataset_prompt_obj
 from pb.mutation_prompts import mutation_prompts
 from pb.thinking_styles import thinking_styles
 from pb.run_opencompass import EvaluationConfig
+from pb.types import EvolutionUnit
 from pb.problem_descriptions import WITH_SUBSETS, problem_descriptions
 
 import ipdb
@@ -26,18 +29,23 @@ import ipdb
 load_dotenv() # load environment variables
 EVALUATION_WORK_DIR = os.getenv("EVALUATION_WORK_DIR")
 EVALUATION_DATA_DIR = os.getenv("EVALUATION_DATA_DIR")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-def get_prompt_writer():
-    safety_settings = {
-            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
-            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
-        }
-
-    # model = genai.GenerativeModel("models/gemini-pro", safety_settings=safety_settings, generation_config=genai.types.GenerationConfig(temperature=0.))
-    model = genai.GenerativeModel("models/gemini-pro", safety_settings=safety_settings)
+def get_prompt_writer(writerLLM: str):
+    match writerLLM:
+        case "gemini-pro":
+            safety_settings = {
+                    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+                    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+                }
+            model = genai.GenerativeModel("models/gemini-pro", safety_settings=safety_settings)
+        case "gpt-3.5-turbo":
+            model = OpenAI(api_key=OPENAI_API_KEY)
+        case _:
+            raise NotImplementedError(f"{writerLLM} not implemented yet.")
     return model
 
 def get_opencompass_cfg(eval_args: EvaluationConfig):
@@ -88,20 +96,30 @@ def dataset_loop(writer_model: ModelWrapper, target_model: str, study_configs: d
         dataset_cfg.datasets = [dataset, ]
 
         with wandb.init(project="PromptBreeder", name=f"({study_configs['exec_datetime_str']}) {dataset_name}", job_type="train", config=study_configs) as wandb_run:
-            logger.info(f'Creating the population...')
+            print(f'Creating the population...')
             _ = wandb_run.use_artifact("LLM Eval/training-dataset:v2")
 
             result = dataset_prompt_obj(None, target_model, dataset_name, dataset_cfg, eval_args, wandb_run)
             wandb_run.summary["best_score"] = result["score"]
             wandb_run.summary["best_experiment_dir"] = ""
+            wandb_run.summary["best_prompt"] = result["original_prompt"]
             wandb_run.log({f"{result['metric']}": result["score"]})
             
             population = create_population(tp_set=t_styles, mutator_set=m_prompts, problem_description=problem_desc)
 
-            logger.info(f'Generating the initial prompts...')
+            baseline_unit = EvolutionUnit(
+                T="",
+                M="",
+                P=result["original_prompt"],
+                fitness=result["score"],
+                history=[]
+            )
+            population.elites.append((result["score"], baseline_unit))
+
+            print(f'Generating the initial prompts...')
             init_run(population, writer_model, target_model, dataset_name, dataset_cfg, eval_args, wandb_run)
 
-            logger.info(f'Starting the genetic algorithm...')
+            print(f'Starting the genetic algorithm...')
             run_for_n(study_configs["epochs"], population, writer_model, target_model, dataset_name, dataset_cfg, eval_args, wandb_run)
 
 def get_params():
@@ -109,6 +127,7 @@ def get_params():
     shell_parse.add_argument('--comment', type=str, default="", help='comments about the run')
     shell_parse.add_argument('--device', type=str, required=True, help='where was the experiment run? Helps to track down opencompass output files.')
 
+    shell_parse.add_argument('--writerLLM', type=str, required=True, help='LLM to write the prompt')
     shell_parse.add_argument('--LLM', type=str, required=True, help='LLM to optimize the prompt for')
     shell_parse.add_argument('--dataset', type=str, help='dataset to optimize for; if unset, all datasets will be used')
     shell_parse.add_argument('--sample_size', type=int, default=1, help='Number of samples to draw from each dataset for metric calculation')
@@ -135,9 +154,9 @@ if __name__ == "__main__":
         "think_sty": params.think_sty
     }
 
-    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
-    writer_model = get_prompt_writer()
-    writer_model = ModelWrapper(writer_model, "gemini-pro")
+    logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.WARNING)
+    writer_model = get_prompt_writer(params.writerLLM)
+    writer_model = ModelWrapper(writer_model, params.writerLLM)
     target_model = params.LLM
 
     dataset_loop(writer_model, target_model, study_configs)

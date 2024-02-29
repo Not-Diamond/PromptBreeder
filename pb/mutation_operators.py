@@ -146,15 +146,14 @@ def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, target_mod
         else:
             correct_samples.append((sample["eval_details"]["prompt"], sample["eval_details"]["references"]))
 
-    random_sample = random.sample(correct_samples, 2)
-    prompt, answer = random_sample
+    random_samples = random.sample(correct_samples, 2)
 
     HEADING = f"I gave a friend an instruction and some advice. Here are the correct examples of his workings out\n\n"
     ENDING = "The instruction was: "
     examples = ""
-    for sample in correct_samples:
+    for sample in random_samples:
         prompt, answer = sample
-        examples += f"{prompt}\n{answer}.\n\n"
+        examples += f"Q: {prompt}\nA: {answer}.\n\n"
 
     unit.P = model.generate(HEADING + examples + ENDING)
     return unit 
@@ -231,11 +230,13 @@ def mutate(population: Population, model: ModelWrapper, target_model: str, datas
         sorted_elites = sorted(population.elites, key=lambda x: x[0])
         sorted_elite_units = [e[1] for e in sorted_elites]
 
+        elites = [e[1] for e in population.elites]
+
         mutation_data = {
             'unit' : mutation_input,
             'model' : model,
             'sorted_elites': sorted_elite_units,
-            'elites' : population.elites,
+            'elites' : elites,
             'problem_description': population.problem_description,
             'dataset_name': dataset_name,
             'target_model': target_model
