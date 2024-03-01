@@ -30,6 +30,7 @@ with read_base():
     from .models.gpt_3_5_turbo.gpt_3_5_turbo import models as gpt_3_5_turbo
     from .models.gpt_4.gpt_4 import models as gpt_4
     from .models.claude.claude2 import models as claude2
+    from .models.claude.claude2_1 import models as claude2_1
     from .models.gemini.gemini_pro import models as gemini_pro
 
 
@@ -60,4 +61,4 @@ datasets = [
     *xsum_datasets
 ]
 
-models = [*gpt_3_5_turbo, *gpt_4, *claude2, *gemini_pro]
+models = [*gpt_3_5_turbo, *gpt_4, *claude2, *gemini_pro, *claude2_1]

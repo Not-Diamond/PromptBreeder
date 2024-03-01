@@ -75,6 +75,8 @@ def fill_model_cfg(cfg: Config):
                 model["key"] = [OPENAI_API_KEY,]
             case 'claude-2':
                 model["key"] = CLAUDE_API_KEY
+            case 'claude-2.1':
+                model["key"] = CLAUDE_API_KEY
             case 'gemini-pro':
                 model["key"] = GEMINI_API_KEY
             case _:
