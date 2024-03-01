@@ -2,7 +2,7 @@
 
 python -u main.py \
     --comment "test" \
-    --device "t7-fmwk" \
+    --device "AWS-Eval" \
     --writerLLM "gpt-3.5-turbo" \
     --LLM "gemini-pro" \
     --sample_size 100 \
