@@ -4,7 +4,7 @@ python -u main.py \
     --comment "test" \
     --device "AWS-Eval" \
     --writerLLM "gpt-3.5-turbo" \
-    --LLM "gemini-pro" \
+    --LLM "gpt-3.5-turbo" \
     --sample_size 100 \
     --epochs 20 \
     --mut_prompts 2 \

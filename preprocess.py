@@ -55,5 +55,5 @@ def create_dataset(model, root):
 if __name__ == "__main__":
     load_dotenv()
     datadir = download_training_dataset("datasets")
-    create_dataset("claude-2.1", datadir)
-    create_dataset("gpt-4", datadir)
+    # create_dataset("claude-2.1", datadir)
+    # create_dataset("gpt-4", datadir)
