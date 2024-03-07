@@ -7,3 +7,4 @@ test_random.py
 /datasets/
 /icl_inference_output/
 /wandb/
+/checkpoints/

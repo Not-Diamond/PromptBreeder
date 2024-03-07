@@ -7,4 +7,4 @@ if __name__ == "__main__":
 
     with wandb.init(project="PromptBreeder") as run:
         artifact = run.use_artifact("prompt-table:latest")
-        _ = artifact.download(root="datasets")
+        _ = artifact.download(root="datasets/prompt_table")
