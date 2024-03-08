@@ -74,14 +74,14 @@ if __name__ == "__main__":
     dataset = dataset_dict["train"]
     dataset = dataset.train_test_split(test_size=0.2)
     dataset = dataset.map(formatting_prompts_func, batched=True)
-    dataset = dataset.remove_columns(["chosen_score", "rejected_score"])
+    dataset = dataset.remove_columns(["chosen_score", "rejected_score", "problem_description"])
 
     training_args = TrainingArguments(
         output_dir=save_dir,
-        learning_rate=1e-3,
-        per_device_train_batch_size=4,
-        per_device_eval_batch_size=4,
-        max_steps=1000,
+        learning_rate=1e-5,
+        per_device_train_batch_size=3,
+        per_device_eval_batch_size=3,
+        max_steps=100000,
         logging_steps=10,
         warmup_steps=150,
         save_strategy="steps",
@@ -89,9 +89,8 @@ if __name__ == "__main__":
         gradient_checkpointing=True,
         save_steps=500,
         eval_steps=500,
-        num_train_epochs=3,
         weight_decay=0.01,
-        remove_unused_columns=True,
+        remove_unused_columns=False,
         load_best_model_at_end=True,
         push_to_hub=False,
     )

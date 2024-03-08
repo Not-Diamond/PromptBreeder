@@ -82,6 +82,10 @@ def sft_train(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, dataset: Da
     trainer.save_model(save_dir)
 
 
+def sft_test(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, dataset: Dataset, save_dir: Path):
+    pass
+
+
 if __name__ == "__main__":
     load_dotenv()
     checkpoint_dir = Path("checkpoints")
