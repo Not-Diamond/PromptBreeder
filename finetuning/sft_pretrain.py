@@ -1,8 +1,10 @@
 import os
 from pathlib import Path
 from more_itertools import batched
+from functools import partial
 
 from datasketch import MinHash
+import tlsh
 
 import numpy as np
 
@@ -15,7 +17,7 @@ from dotenv import load_dotenv
 import ipdb
 
 
-def formatting_prompts_func(example: dict):
+def formatting_prompts_func(example: dict, tokenizer: AutoTokenizer):
 
     def hash_prompt(prompt: str):
         separate_words = prompt.split(" ")
@@ -39,14 +41,17 @@ def formatting_prompts_func(example: dict):
 
     output_texts = []
     for i in range(len(example['chosen'])):
-        prompt_hash = hash_prompt(example['rejected'][i])
-        prompt_hash_str = hash_to_string(prompt_hash)
-        text = f"""### Instruction: Rewrite the following prompt for the problem description.
-        ### Prompt: {prompt_hash_str}
-        ### Problem description: {example['problem_description'][i]}
-        ### Rewritten prompt: {example['chosen'][i]}
-        """
-        output_texts.append(text)
+        # prompt_hash = hash_prompt(example['rejected'][i])
+        # prompt_hash_str = hash_to_string(prompt_hash)
+
+        # prompt_hash_str = tlsh.hash(example['rejected'][i].encode("utf-8"))
+        prompt_hash_str = example['rejected'][i]
+
+        text = f"### Instruction: Rewrite the following prompt for the problem description.\n### Prompt: {prompt_hash_str}\n### Problem description: {example['problem_description'][i]}\n### Rewritten prompt: {example['chosen'][i]}"
+        if len(tokenizer.encode(text)) <= tokenizer.model_max_length:
+            output_texts.append(text)
+
+    # print(f"{len(output_texts)}/{len(example['chosen'])} kept")
     return output_texts
 
 
@@ -57,9 +62,9 @@ def sft_train(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, dataset: Da
     training_args = TrainingArguments(
         output_dir=save_dir,
         learning_rate=1.41e-5,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
-        num_train_epochs=3,
+        per_device_train_batch_size=16,
+        per_device_eval_batch_size=16,
+        num_train_epochs=10,
         gradient_checkpointing=True,
         weight_decay=0.01,
         evaluation_strategy="epoch",
@@ -68,11 +73,12 @@ def sft_train(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, dataset: Da
         push_to_hub=False,
     )
 
+    
     trainer = SFTTrainer(
         model,
         train_dataset=dataset["train"],
         eval_dataset=dataset["test"],
-        formatting_func=formatting_prompts_func,
+        formatting_func=partial(formatting_prompts_func, tokenizer=tokenizer),
         data_collator=collator,
         args=training_args,
         max_seq_length=tokenizer.model_max_length
@@ -82,21 +88,19 @@ def sft_train(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, dataset: Da
     trainer.save_model(save_dir)
 
 
-def sft_test(model: AutoModelForCausalLM, tokenizer: AutoTokenizer, dataset: Dataset, save_dir: Path):
-    pass
-
-
 if __name__ == "__main__":
     load_dotenv()
     checkpoint_dir = Path("checkpoints")
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json", cache_dir="/data/notdiamond/.cache")
+    model = AutoModelForCausalLM.from_pretrained("FacebookAI/roberta-base", is_decoder=True)
+    tokenizer = AutoTokenizer.from_pretrained("FacebookAI/roberta-base")
+
+    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json")
     dataset = dataset_dict["train"]
     dataset = dataset.train_test_split(test_size=0.2)
 
-    model = AutoModelForCausalLM.from_pretrained("google/bigbird-roberta-base", is_decoder=True, cache_dir="/data/notdiamond/.cache")
-    tokenizer = AutoTokenizer.from_pretrained("google/bigbird-roberta-base", cache_dir="/data/notdiamond/.cache")
+    save_dir = checkpoint_dir / "raw_str" / "gpt-3.5-turbo" / "roberta-base" / "sft_model"
 
-    sft_train(model, tokenizer, dataset, checkpoint_dir / "hashed" / "gpt-3.5-turbo" / "sft_model")
+    sft_train(model, tokenizer, dataset, save_dir)

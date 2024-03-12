@@ -6,6 +6,7 @@ from tqdm import tqdm
 import torch
 
 from datasketch import MinHash
+import tlsh
 
 import numpy as np
 
@@ -47,12 +48,11 @@ def formatting_prompts_func(example: dict):
 
     output_texts = []
     for i in range(len(example['chosen'])):
-        prompt_hash = hash_prompt(example['rejected'][i])
-        prompt_hash_str = hash_to_string(prompt_hash)
-        text = f"""### Instruction: Rewrite the following prompt to make it better.
-        ### Prompt: {prompt_hash_str}
-        ### Rewritten prompt:
-        """
+        # prompt_hash = hash_prompt(example['rejected'][i])
+        # prompt_hash_str = hash_to_string(prompt_hash)
+        # prompt_hash_str = tlsh.hash(example['rejected'][i].encode("utf-8"))
+        prompt_hash_str = example['rejected'][i]
+        text = f"### Instruction: Rewrite the following prompt for the problem description.\n### Prompt: {prompt_hash_str}\n### Problem description: {example['problem_description'][i]}\n### Rewritten prompt:"
         output_texts.append(text)
     example["prompt"] = output_texts
     return example
@@ -64,13 +64,13 @@ if __name__ == "__main__":
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    save_dir = checkpoint_dir / "hashed" / "gpt-3.5-turbo" / "dpo_model"
+    save_dir = checkpoint_dir / "raw_str" / "gpt-3.5-turbo" / "roberta-base" / "dpo_model"
 
-    model = AutoModelForCausalLM.from_pretrained("checkpoints/hashed/gpt-3.5-turbo/sft_model/checkpoint-40000", is_decoder=True, cache_dir="/data/notdiamond/.cache")
-    model_ref = AutoModelForCausalLM.from_pretrained("checkpoints/hashed/gpt-3.5-turbo/sft_model/checkpoint-40000", is_decoder=True, cache_dir="/data/notdiamond/.cache")
-    tokenizer = AutoTokenizer.from_pretrained("checkpoints/hashed/gpt-3.5-turbo/sft_model/checkpoint-40000", cache_dir="/data/notdiamond/.cache")
+    model = AutoModelForCausalLM.from_pretrained("checkpoints/raw_str/gpt-3.5-turbo/roberta-base/sft_model/checkpoint-95110", is_decoder=True)
+    model_ref = AutoModelForCausalLM.from_pretrained("checkpoints/raw_str/gpt-3.5-turbo/roberta-base/sft_model/checkpoint-95110", is_decoder=True)
+    tokenizer = AutoTokenizer.from_pretrained("checkpoints/raw_str/gpt-3.5-turbo/roberta-base/sft_model/checkpoint-95110")
 
-    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json", cache_dir="/data/notdiamond/.cache")
+    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json")
     dataset = dataset_dict["train"]
     dataset = dataset.train_test_split(test_size=0.2)
     dataset = dataset.map(formatting_prompts_func, batched=True)
@@ -82,13 +82,13 @@ if __name__ == "__main__":
         per_device_train_batch_size=3,
         per_device_eval_batch_size=3,
         max_steps=100000,
-        logging_steps=10,
+        logging_steps=100,
         warmup_steps=150,
         save_strategy="steps",
         evaluation_strategy="steps",
         gradient_checkpointing=True,
-        save_steps=500,
-        eval_steps=500,
+        save_steps=1000,
+        eval_steps=1000,
         weight_decay=0.01,
         remove_unused_columns=False,
         load_best_model_at_end=True,
