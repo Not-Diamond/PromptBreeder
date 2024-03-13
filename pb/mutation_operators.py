@@ -134,6 +134,7 @@ def working_out_task_prompt(unit: EvolutionUnit, model: ModelWrapper, target_mod
     Returns: 
         EvolutionUnit: the evolution unit to replace the loser unit.
     """
+    # TODO Update this to use workings out from mutations
     dataset_path = Path(EVALUATION_DATA_DIR) / target_model / f"{dataset_name}.json"
     with open(dataset_path, "r") as fp:
         dataset = json.load(fp)
@@ -247,7 +248,7 @@ def mutate(population: Population, model: ModelWrapper, target_model: str, datas
         print(f"MUTATING: {mutation_input} with {random_mutator.__name__}")
         random_mutator(**mutation_data)
 
-        crossover_weights = [unit.fitness for unit in population.units]
+        crossover_weights = [unit.fitness + 1e-6 for unit in population.units]
         crossover_unit = random.choices(population.units, weights=crossover_weights, k=1)[0]
 
         post_mutation_data = {
