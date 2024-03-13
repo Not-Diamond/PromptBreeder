@@ -6,6 +6,7 @@ from tqdm import tqdm
 import torch
 
 from datasketch import MinHash
+import tlsh
 
 import numpy as np
 
@@ -40,23 +41,28 @@ def formatting_prompts_func(example: dict):
 
     output_texts = []
     for i in range(len(example['chosen'])):
-        prompt_hash = hash_prompt(example['rejected'][i])
-        prompt_hash_str = hash_to_string(prompt_hash)
-        text = f"""### Instruction: Rewrite the following prompt to make it better.
-        ### Prompt: {prompt_hash_str}
-        ### Rewritten prompt: {example['chosen'][i]}
-        """
+        # prompt_hash = hash_prompt(example['rejected'][i])
+        # prompt_hash_str = hash_to_string(prompt_hash)
+
+        prompt_hash_str = tlsh.hash(example['rejected'][i].encode("utf-8"))
+        text = f"### Instruction: Rewrite the following prompt for the problem description.\n### Prompt: {prompt_hash_str}\n### Problem description: {example['problem_description'][i]}\n### Rewritten prompt:"
         output_texts.append(text)
     example["formatted"] = output_texts
     return example
 
 
-def tokenize(tokenizer, sample):
-    sample["input_ids"] = tokenizer.encode(sample["formatted"])
+def tokenize(sample, tokenizer):
+    input_ids = []
+    for i in range(len(sample['chosen'])):
+        tokens = tokenizer.encode(sample["formatted"][i])
+        if len(tokens) < tokenizer.model_max_length:
+            tokens += [tokenizer.eos_token_id for _ in range((tokenizer.model_max_length - len(tokens)))]
+        input_ids.append(tokens)
+    sample["input_ids"] = input_ids
     return sample
 
 
-def ppo_train(ppo_trainer: PPOTrainer, reward_model: pipeline, generation_kwargs: dict, save_dir: Path):
+def ppo_train(ppo_trainer: PPOTrainer, tokenizer: AutoTokenizer, reward_model: pipeline, generation_kwargs: dict, save_dir: Path):
     for epoch in tqdm(range(ppo_trainer.config.ppo_epochs), "epoch: "):
         for batch in tqdm(ppo_trainer.dataloader): 
             query_tensors = batch["input_ids"]
@@ -79,29 +85,31 @@ if __name__ == "__main__":
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    ipdb.set_trace()
-    sft_model = AutoModelForCausalLM.from_pretrained("checkpoints/hashed/gpt-3.5-turbo/sft_model/checkpoint-40000", is_decoder=True, cache_dir="/data/notdiamond/.cache")
-    model = AutoModelForCausalLMWithValueHead.from_pretrained(sft_model, cache_dir="/data/notdiamond/.cache")
-    tokenizer = AutoTokenizer.from_pretrained("checkpoints/hashed/gpt-3.5-turbo/sft_model/checkpoint-40000", cache_dir="/data/notdiamond/.cache")
+    save_dir = checkpoint_dir / "hashed" / "tlsh" / "gpt-3.5-turbo" / "roberta-base" / "ppo_model"
 
-    reward_model = pipeline("text-classification", "checkpoints/hashed/gpt-3.5-turbo/reward_model/checkpoint-10000")
+    sft_model = AutoModelForCausalLM.from_pretrained("checkpoints/hashed/tlsh/gpt-3.5-turbo/roberta-base/sft_model/checkpoint-100000", is_decoder=True)
+    model = AutoModelForCausalLMWithValueHead.from_pretrained(sft_model)
+    tokenizer = AutoTokenizer.from_pretrained("checkpoints/hashed/tlsh/gpt-3.5-turbo/roberta-base/sft_model/checkpoint-100000", padding_side="left")
+    tokenizer.padding_side = "left"
 
-    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json", cache_dir="/data/notdiamond/.cache")
+    reward_model = pipeline("text-classification", "checkpoints/hashed/tlsh/gpt-3.5-turbo/roberta-base/reward_model/checkpoint-60000")
+
+    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json")
     dataset = dataset_dict["train"]
     dataset = dataset.train_test_split(test_size=0.2)
-    dataset = dataset.map(formatting_prompts_func, batched=False)
-    dataset = dataset.map(partial(tokenize, tokenizer=tokenizer), batched=False)
+    dataset = dataset.map(formatting_prompts_func, batched=True)
+    dataset = dataset.map(partial(tokenize, tokenizer=tokenizer), batched=True)
 
     config = PPOConfig(
-        model_name="bigbird-promptwriter",
+        model_name="roberta-promptwriter",
         learning_rate=1.41e-5,
-        ppo_epochs=3
+        ppo_epochs=10
     )
 
     ppo_trainer = PPOTrainer(
         model=model,
         config=config,
-        dataset=dataset,
+        dataset=dataset["train"],
         tokenizer=tokenizer
     )
 
@@ -111,6 +119,7 @@ if __name__ == "__main__":
         "top_p": 1.0,
         "do_sample": True,
         "pad_token_id": tokenizer.eos_token_id,
+        "max_length": tokenizer.model_max_length
     }
 
-    ppo_train(ppo_trainer, reward_model, generation_kwargs, checkpoint_dir / "hashed" / "gpt-3.5-turbo" / "ppo_model")
+    ppo_train(ppo_trainer, tokenizer, reward_model, generation_kwargs, save_dir)

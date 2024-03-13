@@ -9,6 +9,8 @@ from transformers import AutoModelForSequenceClassification, AutoTokenizer, Trai
 
 from trl import RewardTrainer
 
+from dotenv import load_dotenv
+
 
 def preprocess_function(examples, max_length):
     new_examples = {
@@ -30,36 +32,18 @@ def preprocess_function(examples, max_length):
 
     return new_examples
 
-"""
-python examples/scripts/reward_modeling.py \
-    --model_name_or_path=facebook/opt-350m \
-    --output_dir="reward_modeling_anthropic_hh" \
-    --per_device_train_batch_size=64 \
-    --num_train_epochs=1 \
-    --gradient_accumulation_steps=16 \
-    --gradient_checkpointing=True \
-    --learning_rate=1.41e-5 \
-    --report_to="wandb" \
-    --remove_unused_columns=False \
-    --optim="adamw_torch" \
-    --logging_steps=10 \
-    --evaluation_strategy="steps" \
-    --max_length=512 \
-"""
-
 
 if __name__ == "__main__":
+    load_dotenv()
     checkpoint_dir = Path("checkpoints")
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
-    save_dir = checkpoint_dir / "hashed" / "gpt-3.5-turbo" / "reward_model"
+    save_dir = checkpoint_dir / "hashed" / "tlsh" / "gpt-3.5-turbo" / "roberta-base" / "reward_model"
 
-    tokenizer = AutoTokenizer.from_pretrained("google-bert/bert-base-multilingual-cased", use_fast=True)
-    model = AutoModelForSequenceClassification.from_pretrained(
-        "google-bert/bert-base-multilingual-cased", num_labels=1
-    )
-    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json", cache_dir="/data/notdiamond/.cache")
+    tokenizer = AutoTokenizer.from_pretrained("FacebookAI/roberta-base", use_fast=True)
+    model = AutoModelForSequenceClassification.from_pretrained("FacebookAI/roberta-base", num_labels=1)
+    dataset_dict = load_dataset("json", data_files="datasets/finetuning/gpt-3.5-turbo/preference_data.json")
     raw_dataset = dataset_dict["train"]
     raw_dataset = raw_dataset.train_test_split(test_size=0.2)
 
@@ -76,7 +60,7 @@ if __name__ == "__main__":
         learning_rate=1.41e-5,
         per_device_train_batch_size=16,
         per_device_eval_batch_size=16,
-        num_train_epochs=2,
+        num_train_epochs=10,
         weight_decay=0.01,
         optim="adamw_torch",
         gradient_checkpointing=True,

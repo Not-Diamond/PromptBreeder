@@ -1,3 +1,6 @@
 [submodule "notdiamond-server"]
 	path = notdiamond-server
 	url = git@github.com:Not-Diamond/notdiamond-server.git
+[submodule "LLM-Eval"]
+	path = LLM-Eval
+	url = git@github.com:Not-Diamond/LLM-Eval.git
